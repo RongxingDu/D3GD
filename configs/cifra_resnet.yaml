@@ -1,0 +1,40 @@
+# configs/cifar_resnet.yaml
+experiment_name: "cifar10_resnet_heterogeneous"
+seed: 42
+device: "cuda"
+
+environment:
+  num_nodes: 100
+  graph_type: "rgg"
+  connectivity_radius: 0.25
+
+data:
+  dataset: "cifar10"
+  heterogeneity:
+    type: "dirichlet"
+    alpha: 0.1             # Extreme heterogeneity
+  num_workers: 2
+
+training:
+  [cite_start]model: "resnet20"        # 
+  loss: "cross_entropy"
+  [cite_start]global_lr: 0.002         # Lower LR for CIFAR 
+  [cite_start]batch_size: 20           # 
+  max_epochs: 200
+  lr_decay: true
+
+algorithm:
+  weight_init: "metropolis_hastings"
+  
+  d3gd:
+    delta: 0.1
+    topo_lr: 0.0005
+    
+  stl_fw:
+    lambda_reg: 0.5
+    [cite_start]sparsity_budget: 10    # Requires denser graph for convergence [cite: 1528]
+    
+  ac_gt:
+    pruning_threshold: 0.4 # More conservative pruning for hard tasks
+    cycle_length: 20
+    softmax_beta: 5.0

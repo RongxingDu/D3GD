@@ -1,0 +1,40 @@
+experiment_name: "mnist_lenet_heterogeneous"
+seed: 42
+device: "cuda"
+
+environment:
+  num_nodes: 100
+  graph_type: "rgg"
+  connectivity_radius: 0.2
+
+data:
+  dataset: "mnist"
+  heterogeneity:
+    type: "dirichlet"
+    alpha: 0.1
+  num_workers: 0
+
+training:
+  model: "lenet_gn"
+  loss: "cross_entropy"
+  optimizer: "sgd"
+  global_lr: 0.1
+  batch_size: 128
+  max_epochs: 100
+
+algorithm:
+  weight_init: "metropolis_hastings"
+  
+  d3gd:
+    delta: 0.05
+    topo_lr: 0.001
+    projection: "simplex"
+    
+  stl_fw:
+    lambda_reg: 0.1
+    sparsity_budget: 5
+    
+  ac_gt:
+    pruning_threshold: 0.75
+    cycle_length: 5
+    softmax_beta: 10.0
