@@ -11,126 +11,86 @@ class STL_FW(DecentralizedOptimizer):
         self.sparsity_budget = self.params.sparsity_budget
         self.lr = config.training.global_lr
         
-        # 1. Collect Class Distributions (The "Heterogeneity Data")
-        # shape: (Num_Nodes, Num_Classes)
+        # 1. Collect Class Distributions
         self.H = self._collect_label_distributions()
-        
-        # Center the H matrix (We want to minimize variance from mean)
-        # H_centered = H - mean(H)
         self.H_centered = self.H - self.H.mean(dim=0, keepdim=True)
         
-        # Pre-compute covariance K = H H^T for gradient calc
-        # Grad f(W) = W * K
+        # Pre-compute K = H H^T
         self.K = torch.matmul(self.H_centered, self.H_centered.T)
         
-        # 2. Run Frank-Wolfe to learn W
+        # 2. Run Frank-Wolfe
         print("STL-FW: Starting Topology Learning Phase...")
         self.W = self._run_frank_wolfe()
         print("STL-FW: Topology Learning Complete.")
         
-        # 3. Apply the learned topology
+        # 3. Apply logic
         self.topo.update_weights(self.W)
-        
-        # Standard Di-DGD state
         self.theta_curr = self._collect_node_params()
 
     def _collect_label_distributions(self):
-        """
-        Aggregates label counts/proportions from all nodes.
-        Handles both Classification (Integer Targets) and Regression (Float Targets).
-        """
         dists = []
-        num_classes = 10 # Default bins/classes
+        num_classes = 10 
         
         for node in self.nodes:
             dataset = node.data_loader.dataset
             targets = None
             
-            # --- Extract Targets Robustly ---
-            # Case 1: Subset (Common in partitioning)
+            # --- Robust Target Extraction ---
             if isinstance(dataset, torch.utils.data.Subset):
                 underlying = dataset.dataset
                 indices = dataset.indices
-                
                 if hasattr(underlying, 'targets'):
-                    # Torchvision style
                     targets = np.array(underlying.targets)[indices]
                 elif hasattr(underlying, 'tensors'):
-                    # TensorDataset (Linear Regression)
-                    # We assume (X, y) structure, so index 1 is targets
                     targets = underlying.tensors[1][indices].detach().cpu().numpy().flatten()
-            
-            # Case 2: Direct TensorDataset
             elif hasattr(dataset, 'tensors'):
                 targets = dataset.tensors[1].detach().cpu().numpy().flatten()
-                
-            # Case 3: Direct Torchvision Dataset
             elif hasattr(dataset, 'targets'):
                 targets = np.array(dataset.targets)
                 
-            # Fallback if extraction failed
             if targets is None:
-                print(f"Warning: Could not extract targets for node {node.id}. Using uniform dist.")
                 dists.append(torch.ones(num_classes) / num_classes)
                 continue
 
-            # --- Create Distribution ---
-            # Check if Regression (Floats) or Classification (Ints)
+            # --- Distribution Creation ---
             is_regression = (targets.dtype.kind in 'fc') or (len(np.unique(targets)) > num_classes * 2)
             
             if is_regression:
-                # REGRESSION: Bin the continuous values into a histogram
-                # This allows STL-FW to group nodes with similar output ranges
                 counts, _ = np.histogram(targets, bins=num_classes, density=False)
             else:
-                # CLASSIFICATION: Standard bincount
                 counts = np.bincount(targets.astype(int), minlength=num_classes)
             
-            # Normalize to Probability Distribution
             total = counts.sum()
-            if total > 0:
-                probs = counts / total
-            else:
-                probs = np.ones(num_classes) / num_classes
-                
+            probs = counts / total if total > 0 else np.ones(num_classes) / num_classes
             dists.append(torch.tensor(probs, dtype=torch.float32))
             
         return torch.stack(dists).to(self.device)
 
     def _run_frank_wolfe(self):
-        """
-        Solves: min_W || W * H ||^2 s.t. W is Doubly Stochastic & Physical
-        """
         N = self.num_nodes
-        # Initialize W as Identity
-        W = torch.eye(N, device=self.device)
         
-        # Physical mask (Infinity where no edge exists)
-        # Used for Hungarian algorithm cost
+        # --- FIX: Initialize with Connected Metropolis Weights instead of Identity ---
+        # This prevents the "Disconnected Graph" explosion problem.
+        W = self.topo.get_weights().clone()
+        
         physical_adj = self.topo.physical_mask.cpu().numpy()
         np.fill_diagonal(physical_adj, 1.0)
         
-        # Optimization Loop
         for k in range(self.sparsity_budget):
-            # 1. Compute Gradient
-            # Grad J(W) = W * K
+            # 1. Gradient
             Grad = torch.matmul(W, self.K)
             
-            # 2. Linear Oracle (Hungarian Algorithm)
+            # 2. Oracle
             cost_matrix = Grad.detach().cpu().numpy()
-            # Set non-physical edges to infinity cost
             cost_matrix[physical_adj == 0] = 1e8 
             
             row_ind, col_ind = scipy.optimize.linear_sum_assignment(cost_matrix)
             
-            # Construct Permutation Matrix S
             S = torch.zeros((N, N), device=self.device)
             S[row_ind, col_ind] = 1.0
-            
-            # Symmetrize S
             S_sym = (S + S.T) / 2.0
             
-            # 3. Line Search (Exact for Quadratic)
+            # 3. Line Search
             Delta = S_sym - W
             A = torch.matmul(W, self.H_centered)
             B = torch.matmul(Delta, self.H_centered)
@@ -151,9 +111,10 @@ class STL_FW(DecentralizedOptimizer):
         return W
 
     def step(self):
-        # Standard D-SGD Step with the learned static W
         grads = self._collect_gradients()
         theta_mixed = self.neighbor_mix(self.theta_curr, self.W)
+        
+        # Gradient Descent Step
         theta_next = theta_mixed - self.lr * grads
         
         self._distribute_node_params(theta_next)

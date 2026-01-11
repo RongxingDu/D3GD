@@ -56,12 +56,12 @@ class ResNet20(nn.Module):
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
-def get_model(model_name, input_dim=None):
+def get_model(model_name, input_dim=None, output_dim=1):  # <--- Add output_dim arg
     if model_name == 'linear':
-        return LinearModel(input_dim)
+        return LinearModel(input_dim, output_dim)
     elif model_name == 'lenet_gn':
-        return LeNet5()
+        return LeNet5(num_classes=output_dim) # LeNet supports num_classes
     elif model_name == 'resnet20':
-        return ResNet20()
+        return ResNet20(num_classes=output_dim)
     else:
         raise ValueError(f"Unknown model: {model_name}")

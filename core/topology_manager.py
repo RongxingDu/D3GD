@@ -68,7 +68,27 @@ class TopologyManager:
         # 2. Update
         self.current_weights = constrained_weights
     
-    
+    def get_perron_vector(self, weights_tensor):
+        """
+        Computes the Left Eigenvector (pi) corresponding to eigenvalue 1.
+        pi^T W = pi^T  =>  W^T pi = pi
+        """
+        # Move to CPU/Numpy for eig decomposition
+        W_np = weights_tensor.detach().cpu().numpy()
+        
+        # Eigen decomposition of Transpose
+        evals, evecs = np.linalg.eig(W_np.T)
+        
+        # Find index of eigenvalue closest to 1
+        idx = np.argmin(np.abs(evals - 1.0))
+        
+        # Extract vector and take real part
+        pi = np.real(evecs[:, idx])
+        
+        # Normalize to sum to 1
+        pi = pi / np.sum(pi)
+        
+        return torch.tensor(pi, dtype=torch.float32, device=self.device)
 
     def visualize_topology(self, save_path="topology.png", title="Current Topology"):
         """

@@ -1,16 +1,16 @@
 {
-    "experiment_name": "linear_reg_synthetic",
+    "experiment_name": "binary_class_synthetic",
     "seed": 42,
     "device": "cpu",
     "environment": {
-        "num_nodes": 16,
+        "num_nodes": 10,
         "graph_type": "rgg",
-        "connectivity_radius": 0.4
+        "connectivity_radius": 0.8
     },
     "data": {
-        "dataset": "synthetic_linear",
+        "dataset": "synthetic_binary",
         "input_dim": 10,
-        "num_samples_per_node": 1000,
+        "num_samples_per_node": 100,
         "noise_level": 0.1,
         "heterogeneity": {
             "type": "manual_clusters",
@@ -19,12 +19,13 @@
     },
     "training": {
         "model": "linear",
-        "loss": "mse",
+        "loss": "cross_entropy",
         "optimizer": "sgd",
-        "global_lr": 0.1,
+        "global_lr": 0.01,
         "batch_size": 32,
-        "max_iterations": 1000,
-        "eval_interval": 1
+        "max_iterations": 100,
+        "eval_interval": 1,
+        "output_dim": 2
     },
     "algorithm": {
         "weight_init": "metropolis_hastings",

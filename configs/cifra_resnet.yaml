@@ -16,10 +16,10 @@ data:
   num_workers: 2
 
 training:
-  [cite_start]model: "resnet20"        # 
+  model: "resnet20"        # 
   loss: "cross_entropy"
-  [cite_start]global_lr: 0.002         # Lower LR for CIFAR 
-  [cite_start]batch_size: 20           # 
+  global_lr: 0.002         # Lower LR for CIFAR 
+  batch_size: 20           # 
   max_epochs: 200
   lr_decay: true
 
@@ -32,7 +32,7 @@ algorithm:
     
   stl_fw:
     lambda_reg: 0.5
-    [cite_start]sparsity_budget: 10    # Requires denser graph for convergence [cite: 1528]
+    sparsity_budget: 10    # Requires denser graph for convergence [cite: 1528]
     
   ac_gt:
     pruning_threshold: 0.4 # More conservative pruning for hard tasks
