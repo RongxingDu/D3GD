@@ -21,6 +21,8 @@ training:
   global_lr: 0.002         # Lower LR for CIFAR 
   batch_size: 20           # 
   max_epochs: 200
+  eval_interval: 1
+  output_dim: 10
   lr_decay: true
 
 algorithm:

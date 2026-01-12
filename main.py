@@ -75,11 +75,11 @@ def main():
     output_dim = 1
     if hasattr(cfg.training, 'output_dim'):
         output_dim = cfg.training.output_dim
-    elif cfg.data.dataset in ['mnist', 'cifar10']:
-        output_dim = 10
+    else:
+        assert print("Output dimension must be specified in config for datasets.")
 
     for i in range(cfg.environment.num_nodes):
-        model = get_model(cfg.training.model, input_dim)
+        model = get_model(cfg.training.model, input_dim, output_dim)
         
         # Adjust Linear Model for Output Dim (e.g. 2 classes)
         if cfg.training.model == 'linear' and output_dim != 1:
@@ -96,44 +96,121 @@ def main():
             loss_fn=loss_fn
         )
         nodes.append(node)
+
+    print("\n=== Verifying Data Heterogeneity ===")
+    for i, node in enumerate(nodes):
+        try:
+            # 1. Access the dataset (unwrap Subset if present)
+            ds = node.data_loader.dataset
+            indices = None
+            
+            if hasattr(ds, 'indices'):
+                indices = ds.indices
+                ds = ds.dataset # Unwrap to get the underlying full dataset
+            
+            # 2. Extract full targets based on dataset type
+            if hasattr(ds, 'targets'):
+                # Standard datasets like MNIST/CIFAR
+                full_targets = ds.targets
+                if isinstance(full_targets, list):
+                    full_targets = torch.tensor(full_targets)
+            elif hasattr(ds, 'tensors'):
+                # TensorDataset (Synthetic data)
+                full_targets = ds.tensors[1] # usually [features, labels]
+            else:
+                raise AttributeError("Dataset has no 'targets' or 'tensors'")
+                
+            # 3. Filter targets for this specific node
+            if indices is not None:
+                local_targets = full_targets[indices]
+            else:
+                local_targets = full_targets
+                
+            # 4. Count and Print
+            # Ensure it's a flat tensor for counting
+            if local_targets.dim() > 1:
+                local_targets = local_targets.argmax(dim=1) if local_targets.shape[1] > 1 else local_targets.flatten()
+                
+            unique, counts = torch.unique(local_targets.long(), return_counts=True)
+            dist = dict(zip(unique.tolist(), counts.tolist()))
+            print(f"Node {i}: {dist}")
+            
+        except Exception as e:
+            print(f"Node {i}: Could not inspect data - {e}")
+    print("====================================\n")
         
     print("Initializing Optimizer...")
     OptimizerClass = get_optimizer_class(args.algo)
     optimizer = OptimizerClass(cfg, nodes, topo_manager)
     
-    print("Starting Training Loop...")
-    if hasattr(cfg.training, 'max_iterations'):
-        total_steps = cfg.training.max_iterations
-    else:
-        if len(data_interface.train_dataset) > 0:
-            steps_per_epoch = len(data_interface.train_dataset) // (cfg.environment.num_nodes * cfg.training.batch_size)
-            total_steps = cfg.training.max_epochs * steps_per_epoch
-        else:
-            total_steps = 100
+    # print("Starting Training Loop...")
+    # if hasattr(cfg.training, 'max_iterations'):
+    #     total_steps = cfg.training.max_iterations
+    # else:
+    #     if len(data_interface.train_dataset) > 0:
+    #         steps_per_epoch = len(data_interface.train_dataset) // (cfg.environment.num_nodes * cfg.training.batch_size)
+    #         total_steps = cfg.training.max_epochs * steps_per_epoch
+    #     else:
+    #         total_steps = 100
             
-    if hasattr(cfg.training, 'eval_interval'):
-        eval_interval = cfg.training.eval_interval
+    # if hasattr(cfg.training, 'eval_interval'):
+    #     eval_interval = cfg.training.eval_interval
+    # else:
+    #     eval_interval = total_steps // 20 if total_steps > 20 else 1
+    
+
+    # 1. Setup Data Loaders
+    # Use the small subset for the training loop checks
+    val_loader = data_interface.get_val_dataloader(size=1000) 
+    # Keep the full test set for the final evaluation
+    full_test_loader = data_interface.get_test_dataloader()
+
+    print("Starting Training Loop...")
+    
+    # 2. Calculate Steps Per Epoch
+    if len(data_interface.train_dataset) > 0:
+        # Global Epoch = Total Data / (Nodes * Batch Size)
+        steps_per_epoch = len(data_interface.train_dataset) // (cfg.environment.num_nodes * cfg.training.batch_size)
+        if steps_per_epoch < 1: steps_per_epoch = 1
     else:
-        eval_interval = total_steps // 20 if total_steps > 20 else 1
+        steps_per_epoch = 1
+
+    # 3. Set Interval to 1 Epoch
+    eval_interval = steps_per_epoch
+    print(f"  -> Training for {cfg.training.max_epochs} epochs")
+    print(f"  -> Steps per Epoch: {steps_per_epoch}")
+    print(f"  -> Evaluation Interval: {eval_interval} steps")
+
+    # Recalculate total steps if needed (ensure it covers max_epochs)
+    total_steps = cfg.training.max_epochs * steps_per_epoch
     
     pbar = tqdm(range(total_steps), desc="Training")
     
     for step in pbar:
         optimizer.step()
         
-        if (step + 1) % eval_interval == 0 or (step + 1) == total_steps:
-            avg_metric = optimizer.evaluate(test_loader)
-            cons_err = optimizer.history['consensus_error'][-1] if optimizer.history['consensus_error'] else 0.0
+        # 4. Evaluate using Val Loader (Fast)
+        if (step + 1) % eval_interval == 0:
+            # Pass the small val_loader here
+            avg_metric = optimizer.evaluate(val_loader)
             
-            # Label the metric correctly in progress bar
+            cons_err = optimizer.history['consensus_error'][-1] if optimizer.history['consensus_error'] else 0.0
             metric_name = "MSE" if isinstance(loss_fn, nn.MSELoss) else "Acc"
+            
             pbar.set_postfix({
-                metric_name: f"{avg_metric:.4f}", 
+                'Epoch': f"{(step + 1) // steps_per_epoch}",
+                metric_name: f"{avg_metric:.2f}", 
                 'ConsErr': f"{cons_err:.4f}"
             })
             
     print("Training Complete.")
+    
+    # 5. Final Evaluation on FULL Test Set
+    print("Running Final Evaluation on Full Test Set...")
+    final_acc = optimizer.evaluate(full_test_loader)
+    print(f"Final Test Accuracy: {final_acc:.2f}%")
     print("Saving metrics...")
+    
     logger.save_history(optimizer.history)
     plot_training_results(optimizer.history, logger.save_dir, title_suffix=f"({args.algo})")
     

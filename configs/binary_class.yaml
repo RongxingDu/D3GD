@@ -5,7 +5,7 @@ device: "cpu"
 environment:
   num_nodes: 10
   graph_type: "rgg"
-  connectivity_radius: 0.6
+  connectivity_radius: 0.5
 
 data:
   dataset: "synthetic_binary" # <--- NEW NAME
@@ -14,7 +14,7 @@ data:
   noise_level: 0.1
   heterogeneity: 
     type: "manual_clusters"
-    num_clusters: 2
+    num_clusters: 3
 
 training:
   model: "linear"

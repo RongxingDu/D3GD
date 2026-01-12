@@ -7,7 +7,7 @@ class Di_DGD(DecentralizedOptimizer):
         
         # Initialize Y vector (Eigenvector tracker)
         # Shape: (N, 1) - One scalar per node
-        self.y = torch.ones(self.num_nodes, 1, device=self.device)
+        self.y = torch.ones(self.num_nodes, 1, device=self.device) / self.num_nodes
         
         # Pre-compute static A and pi for metrics
         self.A = self.topo.get_weights()
@@ -34,8 +34,9 @@ class Di_DGD(DecentralizedOptimizer):
         # theta_new = A*theta - lr * grad / (y * n)
         # Note: y is (N, 1), grads is (N, d). Broadcast division.
         
-        # Avoid division by zero stability check
-        y_denom = y_mixed * self.num_nodes
+        # 3. Compute Update using CURRENT y (self.y), not y_mixed
+        # Also ensure self.y was initialized to sum to 1, or adjust logic
+        y_denom = self.y * self.num_nodes 
         gradient_correction = grads / (y_denom + 1e-8)
         
         theta_new = theta_mixed - self.lr * gradient_correction

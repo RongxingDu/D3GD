@@ -142,3 +142,19 @@ class DecentralizedDataInterface:
 
     def get_test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=1000, shuffle=False)
+    
+    # --- NEW METHOD ---
+    def get_val_dataloader(self, size=1000):
+        """
+        Returns a smaller subset of the test dataset for frequent validation.
+        Standard MNIST Test is 10k images; this creates a 1k subset.
+        """
+        # Ensure we don't request more data than exists
+        total_len = len(self.test_dataset)
+        size = min(size, total_len)
+        
+        # Create a deterministic subset (always the same images)
+        indices = torch.arange(size)
+        subset = Subset(self.test_dataset, indices)
+        
+        return DataLoader(subset, batch_size=1000, shuffle=False)

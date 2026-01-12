@@ -14,10 +14,14 @@ class DecentralizedOptimizer(ABC):
         # Metrics History
         self.history = {
             "train_loss": [],
-            "test_acc": [],     # Keep for compatibility
-            "test_mse": [],     # NEW: For regression
+            "test_acc": [],      # Average Accuracy
+            "test_acc_min": [],  # NEW: Worst performing agent
+            "test_acc_max": [],  # NEW: Best performing agent
+            "test_acc_std": [],  # NEW: Variance among agents
+            "test_mse": [],
             "consensus_error": [],
-            "comm_volume": []
+            "comm_volume": [],      # Detailed step-by-step comm log
+            "test_comm_volume": []  # NEW: Comm volume snapshot at eval time
         }
 
     @abstractmethod
@@ -47,24 +51,32 @@ class DecentralizedOptimizer(ABC):
 
     def evaluate(self, test_loader):
         """
-        Evaluates model. 
-        Detects if metric is Accuracy (Classification) or MSE (Regression).
+        Evaluates model and records metrics aligned per Epoch.
         """
+        # 1. Record Metrics
         metrics = []
         for node in self.nodes:
-            # node.evaluate returns MSE (if regression) or Acc% (if classification)
-            metrics.append(node.evaluate(test_loader))
+            val = node.evaluate(test_loader)
+            if isinstance(val, torch.Tensor): val = val.item()
+            metrics.append(val)
         
         avg_metric = sum(metrics) / len(metrics)
+        min_metric = min(metrics)
+        max_metric = max(metrics)
         
-        # Heuristic: If metric is > 100 (unlikely for acc) or purely small float, check loss type
-        # Robust way: Check the loss function of the first node
         is_regression = isinstance(self.nodes[0].loss_fn, torch.nn.MSELoss)
         
         if is_regression:
             self.history['test_mse'].append(avg_metric)
         else:
             self.history['test_acc'].append(avg_metric)
+            self.history['test_acc_min'].append(min_metric)
+            self.history['test_acc_max'].append(max_metric)
+            
+        # 2. NEW: Record Cumulative Communication Volume at this exact moment
+        # This ensures x-axis (Comm) and y-axis (Acc) have same length
+        current_total_comm = self.history['comm_volume'][-1] if self.history['comm_volume'] else 0
+        self.history['test_comm_volume'].append(current_total_comm)
             
         return avg_metric
 

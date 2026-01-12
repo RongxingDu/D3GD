@@ -3,9 +3,9 @@ seed: 42
 device: "cuda"
 
 environment:
-  num_nodes: 100
+  num_nodes: 20
   graph_type: "rgg"
-  connectivity_radius: 0.2
+  connectivity_radius: 0.4
 
 data:
   dataset: "mnist"
@@ -20,7 +20,9 @@ training:
   optimizer: "sgd"
   global_lr: 0.1
   batch_size: 128
-  max_epochs: 100
+  max_epochs: 50
+  eval_interval: 1
+  output_dim: 10 
 
 algorithm:
   weight_init: "metropolis_hastings"

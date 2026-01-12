@@ -26,58 +26,94 @@ def align_metrics_for_plotting(history):
     return df
 
 def plot_training_results(history, save_dir, title_suffix=""):
-    df = align_metrics_for_plotting(history)
-    if df.empty:
+    """
+    Plots metrics using Epochs as x-axis.
+    Assumes metrics in history['test_acc'] are recorded once per epoch.
+    """
+    if not history:
         print("Warning: No history data to plot.")
         return
 
-    # --- Plot 1: Main Performance Metric ---
-    plt.figure(figsize=(10, 6))
-    if 'test_mse' in df.columns and df['test_mse'].notna().any():
-        valid_mse = df['test_mse'][df['test_mse'] > 0]
-        plt.semilogy(valid_mse.index, valid_mse, label='Test MSE', linewidth=2, color='red')
-        plt.ylabel('Mean Squared Error (Log Scale)')
-        plt.title(f'Convergence: MSE vs Iterations {title_suffix}')
-        plot_name = 'mse_vs_iter.png'
-    elif 'test_acc' in df.columns and df['test_acc'].notna().any():
-        plt.plot(df.index, df['test_acc'], label='Test Accuracy', linewidth=2)
-        plt.ylabel('Accuracy (%)')
-        plt.title(f'Test Accuracy {title_suffix}')
-        plot_name = 'acc_vs_iter.png'
+    # Helper to get the main metric list
+    if 'test_mse' in history and len(history['test_mse']) > 0:
+        metric_key = 'test_mse'
+        ylabel = 'MSE (Log Scale)'
+        is_log = True
+    elif 'test_acc' in history and len(history['test_acc']) > 0:
+        metric_key = 'test_acc'
+        ylabel = 'Accuracy (%)'
+        is_log = False
     else:
-        return 
+        return
 
-    plt.xlabel('Iterations')
-    plt.grid(True, which="both", ls="-", alpha=0.3)
+    # Extract Data
+    y_data = np.array(history[metric_key])
+    epochs = np.arange(1, len(y_data) + 1) # X-axis: 1, 2, 3...
+    
+    # --- Plot 1: Convergence vs Epochs ---
+    plt.figure(figsize=(10, 6))
+    
+    if is_log:
+        plt.semilogy(epochs, y_data, label='Average', linewidth=2, color='red')
+    else:
+        plt.plot(epochs, y_data, label='Average', linewidth=2, color='blue')
+        
+        # Add Min/Max Spread if available
+        if 'test_acc_min' in history and 'test_acc_max' in history:
+            y_min = np.array(history['test_acc_min'])
+            y_max = np.array(history['test_acc_max'])
+            
+            # Ensure lengths match before plotting spread
+            if len(y_min) == len(epochs) and len(y_max) == len(epochs):
+                plt.plot(epochs, y_min, linestyle='--', color='red', alpha=0.5, label='Min (Worst)')
+                plt.plot(epochs, y_max, linestyle='--', color='green', alpha=0.5, label='Max (Best)')
+                plt.fill_between(epochs, y_min, y_max, color='blue', alpha=0.1)
+
+    plt.xlabel('Epochs')
+    plt.ylabel(ylabel)
+    plt.title(f'Convergence vs Epochs {title_suffix}')
+    plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend()
-    plt.savefig(os.path.join(save_dir, plot_name))
+    plt.savefig(os.path.join(save_dir, 'convergence_epoch.png'))
     plt.close()
     
-    # --- Plot 2: Consensus Error ---
-    if 'consensus_error' in df.columns:
+    # --- Plot 2: Efficiency (Metric vs Comm Volume) ---
+    # Use the NEW aligned key 'test_comm_volume'
+    if 'test_comm_volume' in history and len(history['test_comm_volume']) == len(y_data):
+        x_comm = np.array(history['test_comm_volume'])
+        
         plt.figure(figsize=(10, 6))
-        plt.semilogy(df.index, df['consensus_error'], label='Consensus Error', color='orange')
-        plt.xlabel('Iterations')
-        plt.ylabel('Consensus Error (Log Scale)')
-        plt.title(f'Consensus Error {title_suffix}')
-        plt.grid(True, which="both", ls="-", alpha=0.3)
-        plt.savefig(os.path.join(save_dir, 'consensus_vs_iter.png'))
-        plt.close()
-    
-    # --- Plot 3: Efficiency ---
-    if 'comm_volume' in df.columns:
-        plt.figure(figsize=(10, 6))
-        if 'test_mse' in df.columns and df['test_mse'].notna().any():
-            valid_idx = df['test_mse'] > 0
-            plt.semilogy(df.loc[valid_idx, 'comm_volume'], df.loc[valid_idx, 'test_mse'], 
-                         label='Test MSE', color='purple')
-            plt.ylabel('MSE (Log Scale)')
-        elif 'test_acc' in df.columns and df['test_acc'].notna().any():
-            plt.plot(df['comm_volume'], df['test_acc'], label='Test Accuracy', color='green')
-            plt.ylabel('Accuracy (%)')
+        if is_log:
+            plt.semilogy(x_comm, y_data, marker='o', markersize=4, label=metric_key, color='purple')
+        else:
+            plt.plot(x_comm, y_data, marker='o', markersize=4, label=metric_key, color='green')
             
-        plt.xlabel('Communication Volume (Floats exchanged)')
-        plt.title(f'Efficiency: Metric vs Comm Volume {title_suffix}')
-        plt.grid(True, which="both", ls="-", alpha=0.3)
-        plt.savefig(os.path.join(save_dir, 'efficiency_vs_comm.png'))
+        plt.xlabel('Communication Volume (Floats)')
+        plt.ylabel(ylabel)
+        plt.title(f'Efficiency: Performance vs Communication {title_suffix}')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.savefig(os.path.join(save_dir, 'efficiency_epoch.png'))
+        plt.close()
+
+    # --- Plot 3: Consensus Error (Optional, usually logged per step) ---
+    if 'consensus_error' in history and len(history['consensus_error']) > 0:
+        cons_data = np.array(history['consensus_error'])
+        # If consensus is logged per step, use steps. If per epoch, use epochs.
+        # Usually logged per epoch in your new setup? 
+        # If it's much longer than epochs, we plot vs Steps.
+        
+        x_axis = np.arange(1, len(cons_data) + 1)
+        x_label = 'Steps'
+        
+        # Heuristic: if lengths match, assume it's per epoch
+        if len(cons_data) == len(epochs):
+            x_label = 'Epochs'
+            
+        plt.figure(figsize=(10, 6))
+        plt.semilogy(x_axis, cons_data, label='Consensus Error', color='orange')
+        plt.xlabel(x_label)
+        plt.ylabel('Consensus Error (Frobenius Norm)')
+        plt.title(f'Consensus Error {title_suffix}')
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.savefig(os.path.join(save_dir, 'consensus_error.png'))
         plt.close()
