@@ -117,3 +117,29 @@ def plot_training_results(history, save_dir, title_suffix=""):
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.savefig(os.path.join(save_dir, 'consensus_error.png'))
         plt.close()
+
+    # Append to utils/plotting.py
+
+def plot_topology_heatmap(matrix, save_path, title="Topology Weights"):
+    """
+    Plots a heatmap of the adjacency matrix.
+    matrix: numpy array or torch tensor (NxN)
+    """
+    # Convert to Numpy
+    if hasattr(matrix, 'detach'):
+        matrix = matrix.detach().cpu().numpy()
+        
+    plt.figure(figsize=(12, 10))
+    
+    # Use a heatmap with a mask for zero values to make them distinct (optional)
+    # cmap="viridis" is good for showing intensity (Yellow=High, Purple=Low)
+    sns.heatmap(matrix, cmap="viridis", vmin=0.0, center=None, square=True, 
+                cbar_kws={'label': 'Edge Weight'})
+    
+    plt.title(title)
+    plt.xlabel("Target Node Index")
+    plt.ylabel("Source Node Index")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+    print(f"Topology Heatmap saved to {save_path}")

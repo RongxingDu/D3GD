@@ -18,6 +18,7 @@ from optimizers.di_dgd import Di_DGD
 from optimizers.d3gd import D3GD
 from optimizers.stl_fw import STL_FW
 from optimizers.ac_gt import AC_GT
+from utils.plotting import plot_training_results, plot_topology_heatmap 
 
 def set_seed(seed):
     if seed is None: return
@@ -33,6 +34,20 @@ def get_optimizer_class(algo_name):
     if algo_name == 'stl_fw': return STL_FW
     if algo_name == 'ac_gt': return AC_GT
     raise ValueError(f"Unknown algorithm: {algo_name}")
+
+def get_effective_topology(optimizer):
+    """
+    Extracts the effective adjacency matrix used for communication.
+    """
+    if hasattr(optimizer, 'A_bar'): # D3GD
+        # A_effective = (1 - delta) * A_bar + delta * A0
+        return (1 - optimizer.delta) * optimizer.A_bar + optimizer.delta * optimizer.A0
+    elif hasattr(optimizer, 'A'): # Di-DGD
+        return optimizer.A
+    elif hasattr(optimizer, 'topo'): 
+        # AC-GT and STL-FW usually update the TopologyManager directly
+        return optimizer.topo.get_weights()
+    return None
 
 def main():
     args = parse_args()
@@ -51,12 +66,22 @@ def main():
     
     print("Initializing Topology...")
     topo_manager = TopologyManager(cfg)
-    topo_manager.visualize_topology(
-        save_path=os.path.join(logger.save_dir, "topology_initial.png"),
-        title="Physical Graph"
-    )
     
+    # --- VISUALIZATION 1: INITIAL TOPOLOGY ---
+    initial_weights = topo_manager.get_weights()
+    topo_manager.visualize_topology(
+        save_path=os.path.join(logger.save_dir, "topology_graph_initial.png"),
+        title="Initial Topology (Graph)"
+    )
+    plot_topology_heatmap(
+        initial_weights, 
+        save_path=os.path.join(logger.save_dir, "topology_heatmap_initial.png"),
+        title="Initial Edge Weights (Heatmap)"
+    )
+    # -----------------------------------------
+
     print(f"Initializing {cfg.environment.num_nodes} Nodes...")
+    
     nodes = []
     
     # Define Loss Function
@@ -224,6 +249,27 @@ def main():
             save_path=os.path.join(logger.save_dir, "topology_final.png"),
             title=f"Final Learned Topology ({args.algo})"
         )
+    # --- VISUALIZATION 2: FINAL TOPOLOGY ---
+    final_weights = get_effective_topology(optimizer)
+    
+    if final_weights is not None:
+        # Plot Heatmap
+        plot_topology_heatmap(
+            final_weights, 
+            save_path=os.path.join(logger.save_dir, "topology_heatmap_final.png"),
+            title=f"Final Learned Topology ({args.algo.upper()})"
+        )
+        
+        # Plot Graph (Optional: Update topo manager to visualize final graph structure)
+        # We temporarily set the manager's weights to the final ones to use its plotting tool
+        original_weights = topo_manager.current_weights
+        topo_manager.update_weights(final_weights) 
+        topo_manager.visualize_topology(
+            save_path=os.path.join(logger.save_dir, "topology_graph_final.png"),
+            title=f"Final Topology Graph ({args.algo.upper()})"
+        )
+        # Restore (though program is ending, it's good practice)
+        topo_manager.current_weights = original_weights
 
 if __name__ == "__main__":
     main()
