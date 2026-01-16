@@ -18,7 +18,7 @@ training:
   model: "lenet_gn"
   loss: "cross_entropy"
   optimizer: "sgd"
-  global_lr: 0.07
+  global_lr: 0.1
   batch_size: 128
   max_epochs: 50
   eval_interval: 1
@@ -28,7 +28,7 @@ algorithm:
   weight_init: "metropolis_hastings"
   
   d3gd:
-    delta: 0.2
+    delta: 0.1
     topo_lr: 0.001
     projection: "simplex"
     

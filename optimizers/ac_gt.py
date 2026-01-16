@@ -138,6 +138,15 @@ class AC_GT(DecentralizedOptimizer):
         # x_next = W_x * (x_now - alpha * y_now)
         # Note: AC-GT typically puts the mixing matrix OUTSIDE the subtraction
         # Eq 21: x_{k+1} = Q_k (x_k - alpha * y_k)
+
+        # --- [NEW] Gradient Clipping ---
+        # Clip 'y' temporarily for the update to ensure stability,
+        # but DO NOT overwrite self.y as it breaks the tracking conservation property.
+        y_norm = torch.norm(self.y, p=2, dim=1, keepdim=True)
+        max_norm = 5.0
+        clip_coef = torch.clamp(max_norm / (y_norm + 1e-6), max=1.0)
+        y_clipped = self.y * clip_coef
+        # -------------------------------
         
         update_direction = self.theta_curr - self.lr * self.y
         theta_next = self.neighbor_mix(update_direction, self.W_x)

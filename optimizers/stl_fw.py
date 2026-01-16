@@ -112,6 +112,14 @@ class STL_FW(DecentralizedOptimizer):
 
     def step(self):
         grads = self._collect_gradients()
+
+        # --- [NEW] Gradient Clipping ---
+        # Standard clipping for D-SGD
+        grad_norm = torch.norm(grads, p=2, dim=1, keepdim=True)
+        max_norm = 5.0
+        clip_coef = torch.clamp(max_norm / (grad_norm + 1e-6), max=1.0)
+        grads = grads * clip_coef
+        # -------------------------------
         theta_mixed = self.neighbor_mix(self.theta_curr, self.W)
         
         # Gradient Descent Step

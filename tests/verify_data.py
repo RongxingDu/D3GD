@@ -58,7 +58,7 @@ if __name__ == "__main__":
     import torch # Import torch here to handle the check above
     
     # 1. Load Config (Simulating MNIST Heterogeneous)
-    config_path = "configs/mnist_lenet.yaml"
+    config_path = "configs/cifar_resnet.yaml"
     cfg = ExperimentConfig(config_path)
     
     # 2. Initialize Data Interface

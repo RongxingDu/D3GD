@@ -38,6 +38,13 @@ class Di_DGD(DecentralizedOptimizer):
         # Also ensure self.y was initialized to sum to 1, or adjust logic
         y_denom = self.y * self.num_nodes 
         gradient_correction = grads / (y_denom + 1e-8)
+
+        # --- [NEW] Gradient Clipping ---
+        # Prevent explosion if y_denom is small or grads are large
+        update_norm = torch.norm(gradient_correction, p=2, dim=1, keepdim=True)
+        max_norm = 5.0 
+        clip_coef = torch.clamp(max_norm / (update_norm + 1e-6), max=1.0)
+        gradient_correction = gradient_correction * clip_coef
         
         theta_new = theta_mixed - self.lr * gradient_correction
         

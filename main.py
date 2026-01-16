@@ -39,14 +39,21 @@ def get_effective_topology(optimizer):
     """
     Extracts the effective adjacency matrix used for communication.
     """
-    if hasattr(optimizer, 'A_bar'): # D3GD
+    # 1. D3GD: Has internal learned A_bar
+    if hasattr(optimizer, 'A_bar'): 
         # A_effective = (1 - delta) * A_bar + delta * A0
         return (1 - optimizer.delta) * optimizer.A_bar + optimizer.delta * optimizer.A0
-    elif hasattr(optimizer, 'A'): # Di-DGD
-        return optimizer.A
+    
+    # 2. AC-GT: Has internal W_x and W_y
+    # We visualize W_x as it governs the consensus of model parameters
+    elif hasattr(optimizer, 'W_x'): 
+        return optimizer.W_x
+        
+    # 3. STL-FW: Updates the topo manager directly, or Di-DGD (Static)
+    # This covers cases where the optimizer syncs with the manager
     elif hasattr(optimizer, 'topo'): 
-        # AC-GT and STL-FW usually update the TopologyManager directly
         return optimizer.topo.get_weights()
+        
     return None
 
 def main():
